@@ -230,7 +230,7 @@ class SimInfo:
 
 info = SimInfo()
 
-ray_angles = [
+ray_angles = sorted([
     # Front-focused (critical for upcoming turns)
     0,
     -2, 5, 2, 5,
@@ -242,8 +242,7 @@ ray_angles = [
     -45, 45, -60, 60,
     # Optional: Extreme angles for hairpin turns
     -75, 75, -90, 90
-]
-
+])
 
 def get_car_details():
     """Get the car position and rotation."""

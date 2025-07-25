@@ -179,7 +179,7 @@ class ACEnv(gym.Env):
         progress_reward = delta_progress * 100.0  # Primary reward component
 
         # 2. Speed Reward (encourage meaningful speed)
-        speed_reward = (speed / 350) * 2.0  # Scaled to max speed
+        speed_reward = (speed / 350) * 1.0  # Scaled to max speed
 
         # 3. Steering Penalty (smooth control)
         steering_penalty = 0.2 * abs(steer_angle) ** 2 #changed from 0.2
@@ -187,7 +187,7 @@ class ACEnv(gym.Env):
         # 4. Action Smoothness Penalty
         delta_steer = abs(steer_angle - prev_steer)
         delta_throttle = abs(throttle_brake - prev_throttle_brake)
-        smoothness_penalty = 0.4 * (delta_steer ** 2 + delta_throttle ** 2)
+        smoothness_penalty = 0.3 * (delta_steer ** 2 + delta_throttle ** 2)
         offtrack_penalty= 0.0
         # 6. Off-track detection (emergency penalty)
         if is_car_off_track(self.car_pos[0], self.car_pos[1], left_polygon, right_polygon):  # All rays maxed out (heuristic)
