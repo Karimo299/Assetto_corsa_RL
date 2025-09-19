@@ -6,7 +6,7 @@ The bot uses ray-casting sensors, throttle and steering control, and a custom re
 Currently, the **Soft Actor-Critic (SAC)** algorithm achieves the best lap performance.  
 
 ## Demo Video 🎥
-👉 [Watch the YouTube Demo](https://youtube.com/your-video-link-here)
+👉 [Watch the YouTube Demo](https://youtu.be/xvmljSweza0)
 
 ## Description
 I wanted to make a reinforcement learning agent that doesn’t have an edge over a human in terms of inputs.  
@@ -22,7 +22,7 @@ This forces it to learn the track, discover the optimal racing line, and improve
 - Ray-cast sensor system for track awareness  
 - Adaptive throttle and steering control  
 - Reward shaping for speed, stability, and racing line  
-- Trained with state-of-the-art RL algorithms (SAC, TD3, PPO comparisons)  
+- Trained with RL algorithms (SAC, TD3, PPO comparisons)  
 
 ## Requirements
 - Python 3.10+  
