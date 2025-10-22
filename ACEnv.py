@@ -35,6 +35,7 @@ class ACEnv(gym.Env):
         self.RESET_TELEPORT_POS = (0, 0, 0, 1, 0, 0, 0)
         self.INIT_CONTROL = (1, 0, 0)
         self.OBS_BASE_FEATURES = 4  # [track pos, speed, steer, throttle/brake]
+        self.max_steer_angle = 450.0  # Degrees reported by the shared memory interface
 
         # self.app = Application().connect(title="Assetto Corsa")
         # self.window = self.app.top_window()
@@ -58,6 +59,9 @@ class ACEnv(gym.Env):
             dtype=np.float32
         )
         self.obs_size = self.OBS_BASE_FEATURES + len(ray_angles)
+        self.ray_angles = np.array(ray_angles, dtype=np.float32)
+        self.last_action = np.zeros(2, dtype=np.float32)
+        self.prev_action = np.zeros(2, dtype=np.float32)
 
     def reset(self, seed=None, options=None):
         # time.sleep(2)
@@ -65,6 +69,8 @@ class ACEnv(gym.Env):
         self.total_reward = 0
         self.in_lap = False
         self.low_speed_time_seconds = 0.0  # Reset low speed timer
+        self.last_action[:] = 0.0
+        self.prev_action[:] = 0.0
 
         # Teleport to initial position
         self.car_controller.teleport(*self.INIT_TELEPORT_POS)
@@ -86,6 +92,9 @@ class ACEnv(gym.Env):
         # Split throttle_brake into throttle and brake
         throttle = max(0, throttle_brake)
         brake = max(0, -throttle_brake)
+
+        self.prev_action = self.last_action.copy()
+        self.last_action = np.array([steering, throttle_brake], dtype=np.float32)
 
         # Send control signals to the car
         self.car_controller.write_car_controls(throttle, brake, steering)
@@ -168,8 +177,6 @@ class ACEnv(gym.Env):
 
         # Previous state components
         prev_progress = self.prev_state[0] if self.prev_state is not None else 0.0
-        prev_steer = self.prev_state[2] if self.prev_state is not None else 0.0
-        prev_throttle_brake = self.prev_state[3] if self.prev_state is not None else 0.0
 
         # 1. Progress Reward (main driver)
         delta_progress = current_progress - prev_progress
@@ -182,13 +189,47 @@ class ACEnv(gym.Env):
         speed_reward = (speed / 350) * 1.0  # Scaled to max speed
 
         # 3. Steering Penalty (smooth control)
-        steering_penalty = 0.2 * abs(steer_angle) ** 2 #changed from 0.2
+        throttle = max(0.0, throttle_brake)
+        brake = max(0.0, -throttle_brake)
 
-        # 4. Action Smoothness Penalty
-        delta_steer = abs(steer_angle - prev_steer)
-        delta_throttle = abs(throttle_brake - prev_throttle_brake)
-        smoothness_penalty = 0.3 * (delta_steer ** 2 + delta_throttle ** 2)
-        offtrack_penalty= 0.0
+        normalized_steer_angle = np.clip(abs(steer_angle) / self.max_steer_angle, 0.0, 1.0)
+        steering_penalty = 0.5 * normalized_steer_angle ** 2
+
+        # 4. Action Smoothness Penalty (encourage gradual control changes)
+        action_delta = self.last_action - self.prev_action
+        smoothness_penalty = 0.5 * float(np.sum(action_delta ** 2))
+
+        # 5. Throttle usage when travelling straight with clear track ahead
+        steering_effort = abs(self.last_action[0])
+        straight_factor = max(0.0, 1.0 - steering_effort)
+
+        forward_mask = np.abs(self.ray_angles) <= 10
+        if np.any(forward_mask):
+            forward_clearance = float(np.mean(ray_distances[forward_mask]))
+        else:
+            forward_clearance = float(np.mean(ray_distances)) if len(ray_distances) > 0 else 0.0
+        max_clearance = float(np.max(ray_distances)) if len(ray_distances) > 0 else 0.0
+        if max_clearance > 0:
+            forward_clearance_norm = np.clip(forward_clearance / max_clearance, 0.0, 1.0)
+        else:
+            forward_clearance_norm = 0.0
+
+        throttle_reward = 1.5 * throttle * straight_factor * (0.5 + 0.5 * forward_clearance_norm)
+        brake_penalty = 1.0 * brake * straight_factor
+
+        # 6. Track centering based on lateral ray balance
+        center_reward = 0.0
+        left_mask = self.ray_angles < 0
+        right_mask = self.ray_angles > 0
+        if np.any(left_mask) and np.any(right_mask):
+            left_mean = float(np.mean(ray_distances[left_mask]))
+            right_mean = float(np.mean(ray_distances[right_mask]))
+            balance = 1.0 - abs(left_mean - right_mean) / (left_mean + right_mean + 1e-6)
+            balance = float(np.clip(balance, 0.0, 1.0))
+            speed_factor = np.clip(speed / 150.0, 0.0, 1.0)
+            center_reward = 2.0 * balance * (0.3 + 0.7 * speed_factor)
+
+        offtrack_penalty = 0.0
         # 6. Off-track detection (emergency penalty)
         if is_car_off_track(self.car_pos[0], self.car_pos[1], left_polygon, right_polygon):  # All rays maxed out (heuristic)
             offtrack_penalty = 50.0
@@ -197,8 +238,11 @@ class ACEnv(gym.Env):
         reward = (
             progress_reward
             + speed_reward
+            + center_reward
+            + throttle_reward
             - steering_penalty
             - smoothness_penalty
+            - brake_penalty
             - offtrack_penalty
         )
 
@@ -212,8 +256,11 @@ class ACEnv(gym.Env):
         # Diagnostic print
         print(f"[Reward Components] Progress: {progress_reward:.1f} | "
               f"Speed: {speed_reward:.1f} | "
+              f"Center: {center_reward:.1f} | "
+              f"Throttle: {throttle_reward:.1f} | "
               f"SteerPen: {-steering_penalty:.1f} | "
               f"SmoothPen: {-smoothness_penalty:.1f} | "
+              f"BrakePen: {-brake_penalty:.1f} | "
               f"offtrack_penalty: {-offtrack_penalty:.1f}")
 
         return float(reward)
