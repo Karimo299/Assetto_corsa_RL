@@ -14,8 +14,9 @@ except ImportError:
 
 
 def load_track_data():
+    track_name = "austria"
     script_dir = os.path.dirname(os.path.realpath(__file__))
-    csv_path = os.path.join(script_dir, 'csv/austria.csv')
+    csv_path = os.path.join(script_dir, f'csv/{track_name}/track.csv')
 
     left_barrier = []
     right_barrier = []

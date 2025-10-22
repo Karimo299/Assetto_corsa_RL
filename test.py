@@ -6,7 +6,7 @@ import numpy as np
 
 # Create a fresh environment
 env = DummyVecEnv([lambda: ACEnv()])
-model_dir = "models/SAC_First_Train_20250721_143806/920000_steps"
+model_dir = "good_model/920000_steps"
 model_path = os.path.join(model_dir, "SAC.zip")
 vec_normalize_path = os.path.join(model_dir, "vec_normalize_stats.pkl")
 
