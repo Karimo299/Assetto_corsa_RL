@@ -102,6 +102,23 @@ class TrackRenderer:
         self.draw_track(car_pos)
         self.draw_car()
         self.draw_rays(car_pos, heading)
+        
+        # Calculate ray distances for turn detection
+        ray_distances = []
+        for angle in ray_angles:
+            # Calculate ray endpoint
+            ray_endpoint = track_utils.calculate_ray_endpoint(car_pos, heading, angle, left_polygon, right_polygon)
+            
+            # Calculate distance to the track border
+            if ray_endpoint is not None:
+                distance = np.linalg.norm(np.array(car_pos) - np.array(ray_endpoint))
+                ray_distances.append(distance)
+            else:
+                ray_distances.append(5000)
+        
+        # Detect if on straight
+        is_straight = track_utils.detect_turn_state(ray_distances, ray_angles)
+        
         # Display car details as text
         self.render_text(f"Position: ({car_pos[0]:.1f}, {car_pos[1]:.1f})", (10, 10))
         self.render_text(f"Heading: {heading:.2f} rad", (10, 40))
@@ -122,6 +139,11 @@ class TrackRenderer:
             norm_pos = 0
         self.render_text(f"Normalized Pos: {norm_pos:.3f}", (10, 220))
         self.render_text(f"In lap: {in_lap}", (10, 250))
+        
+        # Display straight/turn state
+        turn_color = (0, 255, 255) if is_straight else (255, 255, 0)
+        turn_text = "STRAIGHT" if is_straight else "TURN"
+        self.render_text(f"Track State: {turn_text}", (10, 280), turn_color)
 
         
         # Draw zoom level information

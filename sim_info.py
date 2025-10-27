@@ -254,8 +254,10 @@ def get_car_details():
     brake = info.physics.brake
     steerAngle = info.physics.steerAngle
     normalizedCarPosition = info.graphics.normalizedCarPosition
+    distance_traveled = info.graphics.distanceTraveled  # Distance traveled in meters
     laps = info.graphics.completedLaps
-    return car_pos, heading, speed, gas, brake, steerAngle, normalizedCarPosition, laps
+    drs_available = info.physics.drsAvailable  # DRS availability (1 = available, 0 = not available)
+    return car_pos, heading, speed, gas, brake, steerAngle, normalizedCarPosition, distance_traveled, laps, drs_available
 
 
 def demo():

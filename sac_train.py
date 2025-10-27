@@ -131,6 +131,7 @@ if __name__ == "__main__":
           policy_kwargs=policy_kwargs,
           verbose=1,
           tensorboard_log=log_path,
+          device="cuda",  # Use GPU for training
       )
 
     # Optional: Continue training the pre-trained model
