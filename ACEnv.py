@@ -138,19 +138,59 @@ class ACEnv(gym.Env):
             ray_distances
         ])
 
+        # Check if car is off track and terminate
+        done = is_car_off_track(self.car_pos[0], self.car_pos[1], left_polygon, right_polygon)
+     
         # Calculate reward
-        reward = self.calculate_reward(state, distance_traveled, steering, throttle_brake, ray_distances)
+        reward = self.calculate_reward(state, distance_traveled, steering, throttle_brake, ray_distances, done)
         self.total_reward += reward
         self.prev_steering = steering
         self.prev_throttle_brake = throttle_brake
 
-        # Check if car is off track and terminate
-        done = is_car_off_track(self.car_pos[0], self.car_pos[1], left_polygon, right_polygon)
         if done:
-            print(f"Total Reward: {self.total_reward}")
+            print(f"Total Reward (episode): {self.total_reward}")
   
         return state, reward, done, False, {}
 
-    def calculate_reward(self, state, distance_traveled, steering, throttle_brake, ray_distances):
-        pass
+    def calculate_reward(self, state, distance_traveled, steering, throttle_brake, ray_distances, done):
+        progress_reward_weight = 1.0
+        steering_change_penalty_weight = 0.1
+        throttle_brake_change_penalty_weight = 0.05
+        crash_penalty = 5.0
+        debug_reward_print = False
+
+        steering_change = float(steering - self.prev_steering)
+        throttle_brake_change = float(throttle_brake - self.prev_throttle_brake)
+        
+        
+        if self.prev_distance_traveled is None:
+            delta_dist = 0.0
+        else:
+            delta_dist = distance_traveled - self.prev_distance_traveled
+            if delta_dist < 0.0:
+                # Guard against telemetry glitches / wraparounds
+                delta_dist = 0.0
+
+        progress_reward = float(progress_reward_weight) * float(delta_dist)
+
+        steering_change_penalty = -float(steering_change_penalty_weight) * (steering_change ** 2)
+        throttle_brake_change_penalty = -float(throttle_brake_change_penalty_weight) * (throttle_brake_change ** 2)
+
+        reward = progress_reward + steering_change_penalty + throttle_brake_change_penalty
+
+        if done:
+            reward -= float(crash_penalty)
+
+        if debug_reward_print:
+            projected_total = self.total_reward + reward  # step() adds reward after this returns
+            print(
+                f"\rprogress={progress_reward:+.4f} "
+                f"steer_pen={steering_change_penalty:+.4f} "
+                f"throttle_pen={throttle_brake_change_penalty:+.4f} "
+                f"reward={reward:+.4f} "
+                f"total~{projected_total:+.4f}",
+                end="",
+                flush=True,
+            )
+        return reward
       
