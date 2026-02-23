@@ -40,7 +40,6 @@ class CarController:
         self.control_memory.flush()
         self.write_car_state()
         time.sleep(1)
-        print("speedddd: ",self.read_car_state().speed_kmh)
 
     def read_car_state(self):
         try:

@@ -24,16 +24,19 @@ class ACEnv(gym.Env):
         self.prev_throttle_brake = 0.0
         self.prev_distance_traveled = None
         self.prev_normalizedCarPosition = None
-        
-        # NEEDED FOR DIRECT MEMORY ACCESS ASETTO CORSA
+
+      
+        self.STUCK_SPEED_THRESHOLD = 5.0
+        self.STUCK_TIME_STEPS      = 40
+        self.STUCK_PENALTY         = -10.0
+        self._low_speed_counter    = 0
+        self._speed_achieved       = False
+
+        # NEEDED FOR DIRECT MEMORY ACCESS ASSETTO CORSA
         self.INIT_TELEPORT_POS = (490, -11, 248, -0.85, 0, 0.24, 2)
         self.RESET_TELEPORT_POS = (0, 0, 0, 1, 0, 0, 0)
         self.INIT_CONTROL = (1, 0, 0)
 
-
-        # normalizedCarPosition, speed, steerAngle, last_steering, last_throttle_brake + ray distances
-        self.OBS_BASE_FEATURES = 5
-        
         # Rate limiting: 20Hz = 1/20 seconds per step
         self.step_duration = 1.0 / 20.0
 
@@ -44,26 +47,94 @@ class ACEnv(gym.Env):
             dtype=np.float32
         )
 
-        ray_obs_low = np.zeros(len(ray_angles), dtype=np.float32)
-        ray_obs_high = np.ones(len(ray_angles), dtype=np.float32) * 5000
-        low = np.concatenate([np.array([0, 0, -1, -1, -1], dtype=np.float32), ray_obs_low])
-        high = np.concatenate([np.array([1, 350, 1, 1, 1], dtype=np.float32), ray_obs_high])
-        self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
-        self.obs_size = self.OBS_BASE_FEATURES + len(ray_angles)
+        # --- Observation space ---
+        base_low  = np.array([
+            0,      # normalizedCarPosition
+            0,      # speed (km/h)
+            -1,     # steerAngle
+            -1,     # last_steering
+            -1,     # last_throttle_brake
+            -25,    # lat_vel
+            -5,     # long_vel
+            -20,    # yaw_rate
+            0,      # avg_slip
+            0,      # gas
+            0,      # brake
+            0,      # drs_available
+        ], dtype=np.float32)
+
+        base_high = np.array([
+            1,      # normalizedCarPosition
+            350,    # speed (km/h)
+            1,      # steerAngle
+            1,      # last_steering
+            1,      # last_throttle_brake
+            25,     # lat_vel
+            100,    # long_vel
+            20,     # yaw_rate
+            50,     # avg_slip
+            1,      # gas
+            1,      # brake
+            1,      # drs_available
+        ], dtype=np.float32)
+
+        ray_low  = np.zeros(len(ray_angles), dtype=np.float32)
+        ray_high = np.ones(len(ray_angles), dtype=np.float32) * 1000
+
+        self.observation_space = spaces.Box(
+            low=np.concatenate([base_low, ray_low]),
+            high=np.concatenate([base_high, ray_high]),
+            dtype=np.float32
+        )
+        self.obs_size = len(base_low) + len(ray_angles)
 
     def render(self, mode='human'):
         pass
-    
+
     def _compute_ray_distances(self, car_pos, heading):
         ray_distances = []
         for angle in ray_angles:
             ray_endpoint = calculate_ray_endpoint(car_pos, heading, angle, left_polygon, right_polygon)
             if ray_endpoint is not None:
                 distance = np.linalg.norm(np.array(car_pos) - np.array(ray_endpoint))
-                ray_distances.append(distance)
+                ray_distances.append(min(distance, 1000.0))
             else:
-                ray_distances.append(5000)
+                ray_distances.append(1000.0)
         return np.array(ray_distances, dtype=np.float32)
+
+    def _is_stuck(self, speed):
+        if not self._speed_achieved:
+            if speed > self.STUCK_SPEED_THRESHOLD:
+                self._speed_achieved = True
+            return False
+
+        if speed < self.STUCK_SPEED_THRESHOLD:
+            self._low_speed_counter += 1
+        else:
+            self._low_speed_counter = 0
+
+        return self._low_speed_counter >= self.STUCK_TIME_STEPS
+
+    def _build_obs(self, normalizedCarPosition, speed, steerAngle, steering,
+                   throttle_brake, lat_vel, long_vel, yaw_rate, avg_slip,
+                   gas, brake, drs_available, ray_distances):
+        return np.concatenate([
+            np.array([
+                normalizedCarPosition,
+                speed,
+                steerAngle,
+                steering,
+                throttle_brake,
+                np.clip(lat_vel,  -25,  25),
+                np.clip(long_vel,  -5, 100),
+                np.clip(yaw_rate, -20,  20),
+                np.clip(avg_slip,   0,  50),
+                gas,
+                brake,
+                float(drs_available),
+            ], dtype=np.float32),
+            ray_distances
+        ])
 
     def reset(self, seed=None, options=None):
         self.in_lap = False
@@ -72,7 +143,8 @@ class ACEnv(gym.Env):
         self.prev_throttle_brake = 0.0
         self.prev_distance_traveled = None
         self.prev_normalizedCarPosition = None
-
+        self._low_speed_counter = 0
+        self._speed_achieved = False
 
         # Teleport to initial position
         # ALL OF THESE ARE NEEDED DONT REMOVE ANY OF THEM
@@ -81,32 +153,37 @@ class ACEnv(gym.Env):
         self.car_controller.write_car_controls(*self.INIT_CONTROL)
         # END OF ALL OF THESE ARE NEEDED DONT REMOVE ANY OF THEM
 
-        # Let the sim settle at the reset pose, then return a real initial observation
         time.sleep(self.step_duration)
-        car_pos, heading, speed, gas, brake, steerAngle, normalizedCarPosition, distance_traveled, laps, drs_available = get_car_details()
+        (car_pos, heading, speed, gas, brake, steerAngle,
+         normalizedCarPosition, distance_traveled, laps, drs_available,
+         lat_vel, long_vel, yaw_rate, avg_slip) = get_car_details()
+
         self.car_pos = car_pos
         self.prev_distance_traveled = distance_traveled
         self.prev_normalizedCarPosition = normalizedCarPosition
 
         ray_distances = self._compute_ray_distances(self.car_pos, heading)
 
-        reset_state = np.concatenate([
-            np.array([normalizedCarPosition, speed, steerAngle, self.prev_steering, self.prev_throttle_brake], dtype=np.float32),
-            ray_distances
-        ])
-        return reset_state, {}
+        obs = self._build_obs(
+            normalizedCarPosition, speed, steerAngle,
+            self.prev_steering, self.prev_throttle_brake,
+            lat_vel, long_vel, yaw_rate, avg_slip,
+            gas, brake, drs_available, ray_distances
+        )
+        return obs, {}
 
     def step(self, action):
-        step_start = time.time()
-
         steering = float(action[0])
         throttle_brake = float(action[1])
 
         throttle = max(0.0, throttle_brake)
         brake_cmd = max(0.0, -throttle_brake)
 
-        # car pos before action
-        car_pos_before, heading_before, speed_before, gas_before, brake_before, steerAngle_before, normalizedCarPosition_before, distance_traveled_before, laps_before, drs_available = get_car_details()
+        # Car state before action
+        (car_pos_before, heading_before, speed_before, gas_before, brake_before,
+         steerAngle_before, normalizedCarPosition_before, distance_traveled_before,
+         laps_before, drs_available, lat_vel, long_vel, yaw_rate, avg_slip) = get_car_details()
+
         self.prev_distance_traveled = distance_traveled_before
         self.prev_normalizedCarPosition = normalizedCarPosition_before
 
@@ -120,77 +197,94 @@ class ACEnv(gym.Env):
             time.sleep(self.step_duration - elapsed_after_apply)
 
         # Get car details after action
-        car_pos, heading, speed, gas, brake, steerAngle, normalizedCarPosition, distance_traveled, laps, drs_available = get_car_details()
+        (car_pos, heading, speed, gas, brake, steerAngle,
+         normalizedCarPosition, distance_traveled, laps, drs_available,
+         lat_vel, long_vel, yaw_rate, avg_slip) = get_car_details()
+
         self.car_pos = car_pos
 
         # Track lap progress
-        if normalizedCarPosition < 0.1 and normalizedCarPosition >= 0 and not self.in_lap:
+        if 0 <= normalizedCarPosition < 0.1 and not self.in_lap:
             self.in_lap = True
         if not self.in_lap:
             normalizedCarPosition = 0.0
 
-        # Calculate ray distances
+        # Ray distances
         ray_distances = self._compute_ray_distances(self.car_pos, heading)
 
-        # Build observation
-        state = np.concatenate([
-            np.array([normalizedCarPosition, speed, steerAngle, steering, throttle_brake], dtype=np.float32),
-            ray_distances
-        ])
+        # Observation
+        state = self._build_obs(
+            normalizedCarPosition, speed, steerAngle,
+            steering, throttle_brake,
+            lat_vel, long_vel, yaw_rate, avg_slip,
+            gas, brake, drs_available, ray_distances
+        )
 
-        # Check if car is off track and terminate
-        done = is_car_off_track(self.car_pos[0], self.car_pos[1], left_polygon, right_polygon)
-     
-        # Calculate reward
-        reward = self.calculate_reward(state, distance_traveled, steering, throttle_brake, ray_distances, done)
+        # Termination
+        off_track = is_car_off_track(self.car_pos[0], self.car_pos[1], left_polygon, right_polygon)
+        stuck = self._is_stuck(speed)
+        done = off_track or stuck
+
+        # delta_dist for reward
+        if self.prev_distance_traveled is None:
+            delta_dist = 0.0
+        else:
+            delta_dist = max(0.0, distance_traveled - self.prev_distance_traveled)
+
+        reward = self.calculate_reward(delta_dist, speed, steering, throttle_brake, off_track, stuck)
         self.total_reward += reward
         self.prev_steering = steering
         self.prev_throttle_brake = throttle_brake
 
         if done:
-            print(f"Total Reward (episode): {self.total_reward}")
-  
+            reason = "OFF TRACK" if off_track else "STUCK"
+            print(f"\n[{reason}] Total Reward: {self.total_reward:.2f}")
+
         return state, reward, done, False, {}
 
-    def calculate_reward(self, state, distance_traveled, steering, throttle_brake, ray_distances, done):
-        progress_reward_weight = 1.0
-        steering_change_penalty_weight = 0.1
-        throttle_brake_change_penalty_weight = 0.05
-        crash_penalty = 5.0
-        debug_reward_print = False
+    def calculate_reward(self, delta_dist, speed, steering, throttle_brake, off_track, stuck):
+        # --- Weights ---
+        progress_weight         = 1.0
+        speed_weight            = 0.3
+        speed_normalise         = 350.0
+        steering_penalty_weight = 0.05 #probably should be higher
+        throttle_penalty_weight = 0.02 #probably should be higher
+        off_track_penalty       = -20.0
+        debug_reward_print      = True
 
-        steering_change = float(steering - self.prev_steering)
-        throttle_brake_change = float(throttle_brake - self.prev_throttle_brake)
-        
-        
-        if self.prev_distance_traveled is None:
-            delta_dist = 0.0
-        else:
-            delta_dist = distance_traveled - self.prev_distance_traveled
-            if delta_dist < 0.0:
-                # Guard against telemetry glitches / wraparounds
-                delta_dist = 0.0
+        progress_reward  = progress_weight * delta_dist
+        speed_reward     = speed_weight * (speed / speed_normalise)
 
-        progress_reward = float(progress_reward_weight) * float(delta_dist)
+        steering_change  = steering       - self.prev_steering
+        throttle_change  = throttle_brake - self.prev_throttle_brake
+        steering_penalty = -steering_penalty_weight * (steering_change ** 2)
+        throttle_penalty = -throttle_penalty_weight * (throttle_change ** 2)
 
-        steering_change_penalty = -float(steering_change_penalty_weight) * (steering_change ** 2)
-        throttle_brake_change_penalty = -float(throttle_brake_change_penalty_weight) * (throttle_brake_change ** 2)
+        exit_penalty  = off_track_penalty    if off_track else 0.0
+        stuck_penalty = self.STUCK_PENALTY   if stuck     else 0.0
 
-        reward = progress_reward + steering_change_penalty + throttle_brake_change_penalty
-
-        if done:
-            reward -= float(crash_penalty)
+        reward = (
+            progress_reward
+            + speed_reward
+            + steering_penalty
+            + throttle_penalty
+            + exit_penalty
+            + stuck_penalty
+        )
 
         if debug_reward_print:
-            projected_total = self.total_reward + reward  # step() adds reward after this returns
+            projected_total = self.total_reward + reward
             print(
-                f"\rprogress={progress_reward:+.4f} "
-                f"steer_pen={steering_change_penalty:+.4f} "
-                f"throttle_pen={throttle_brake_change_penalty:+.4f} "
-                f"reward={reward:+.4f} "
-                f"total~{projected_total:+.4f}",
+                f"\rprog={progress_reward:+.3f} "
+                f"spd={speed_reward:+.3f} "
+                f"steer={steering_penalty:+.3f} "
+                f"throt={throttle_penalty:+.3f} "
+                f"exit={exit_penalty:+.3f} "
+                f"stuck={stuck_penalty:+.3f} "
+                f"step={reward:+.3f} "
+                f"total~={projected_total:+.3f}",
                 end="",
                 flush=True,
             )
+
         return reward
-      
