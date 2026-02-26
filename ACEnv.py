@@ -24,8 +24,8 @@ class ACEnv(gym.Env):
         self.prev_throttle_brake = 0.0
         self.prev_distance_traveled = None
         self.prev_normalizedCarPosition = None
+        self._prev_laps = None
 
-      
         self.STUCK_SPEED_THRESHOLD = 5.0
         self.STUCK_TIME_STEPS      = 40
         self.STUCK_PENALTY         = -10.0
@@ -143,6 +143,7 @@ class ACEnv(gym.Env):
         self.prev_throttle_brake = 0.0
         self.prev_distance_traveled = None
         self.prev_normalizedCarPosition = None
+        self._prev_laps = None
         self._low_speed_counter = 0
         self._speed_achieved = False
 
@@ -161,6 +162,7 @@ class ACEnv(gym.Env):
         self.car_pos = car_pos
         self.prev_distance_traveled = distance_traveled
         self.prev_normalizedCarPosition = normalizedCarPosition
+        self._prev_laps = laps
 
         ray_distances = self._compute_ray_distances(self.car_pos, heading)
 
@@ -209,6 +211,12 @@ class ACEnv(gym.Env):
         if not self.in_lap:
             normalizedCarPosition = 0.0
 
+        # Detect lap completion
+        lap_completed = False
+        if self._prev_laps is not None and laps > self._prev_laps:
+            lap_completed = True
+        self._prev_laps = laps
+
         # Ray distances
         ray_distances = self._compute_ray_distances(self.car_pos, heading)
 
@@ -223,7 +231,7 @@ class ACEnv(gym.Env):
         # Termination
         off_track = is_car_off_track(self.car_pos[0], self.car_pos[1], left_polygon, right_polygon)
         stuck = self._is_stuck(speed)
-        done = off_track or stuck
+        done = off_track or stuck or lap_completed
 
         # delta_dist for reward
         if self.prev_distance_traveled is None:
@@ -231,59 +239,99 @@ class ACEnv(gym.Env):
         else:
             delta_dist = max(0.0, distance_traveled - self.prev_distance_traveled)
 
-        reward = self.calculate_reward(delta_dist, speed, steering, throttle_brake, off_track, stuck)
+        reward = self.calculate_reward(
+            delta_dist, speed, steering, throttle,
+            brake_cmd, throttle_brake,
+            off_track, stuck, lap_completed
+        )
         self.total_reward += reward
         self.prev_steering = steering
         self.prev_throttle_brake = throttle_brake
 
         if done:
-            reason = "OFF TRACK" if off_track else "STUCK"
-            print(f"\n[{reason}] Total Reward: {self.total_reward:.2f}")
+            if lap_completed:
+                print(f"\n[LAP COMPLETE] Total Reward: {self.total_reward:.2f}")
+            elif off_track:
+                print(f"\n[OFF TRACK] Total Reward: {self.total_reward:.2f}")
+            else:
+                print(f"\n[STUCK] Total Reward: {self.total_reward:.2f}")
 
         return state, reward, done, False, {}
 
-    def calculate_reward(self, delta_dist, speed, steering, throttle_brake, off_track, stuck):
+    def calculate_reward(self, delta_dist, speed, steering, throttle,
+                         brake_cmd, throttle_brake,
+                         off_track, stuck, lap_completed):
         # --- Weights ---
-        progress_weight         = 1.0
-        speed_weight            = 0.3
-        speed_normalise         = 350.0
-        steering_penalty_weight = 0.05 #probably should be higher
-        throttle_penalty_weight = 0.02 #probably should be higher
-        off_track_penalty       = -20.0
-        debug_reward_print      = True
+        progress_weight          = 0.3
+        speed_weight             = 0.3
+        speed_normalise          = 350.0
+        steering_penalty_weight  = 0.15
+        steering_change_weight   = 0.5
+        throttle_change_weight   = 0.15
+        throttle_bonus_weight    = 0.1
+        conflict_brake_threshold    = 0.5
+        conflict_throttle_threshold = 0.1
+        conflict_penalty_value      = -1.5
+        off_track_penalty           = -20.0
+        lap_completion_bonus        = +20.0
+        debug_reward_print          = True
 
-        progress_reward  = progress_weight * delta_dist
-        speed_reward     = speed_weight * (speed / speed_normalise)
+        # Core rewards: progress and speed
+        progress_reward = progress_weight * delta_dist / 4
+        speed_reward    = speed_weight * (speed / speed_normalise)
 
+        # Universal steering penalty
+        steering_penalty = -steering_penalty_weight * (steering ** 2)
+
+        # Unconditional throttle bonus
+        throttle_bonus = throttle_bonus_weight * throttle
+
+        # Smoothness penalties
         steering_change  = steering       - self.prev_steering
         throttle_change  = throttle_brake - self.prev_throttle_brake
-        steering_penalty = -steering_penalty_weight * (steering_change ** 2)
-        throttle_penalty = -throttle_penalty_weight * (throttle_change ** 2)
+        steering_change_penalty = -steering_change_weight  * (steering_change ** 2)
+        throttle_change_penalty = -throttle_change_weight * (throttle_change ** 2)
 
-        exit_penalty  = off_track_penalty    if off_track else 0.0
-        stuck_penalty = self.STUCK_PENALTY   if stuck     else 0.0
+        # Penalise simultaneous throttle + heavy brake
+        if brake_cmd > conflict_brake_threshold and throttle > conflict_throttle_threshold:
+            conflict_penalty = conflict_penalty_value
+        else:
+            conflict_penalty = 0.0
+
+        # Terminal rewards/penalties
+        exit_penalty         = off_track_penalty    if off_track     else 0.0
+        stuck_penalty        = self.STUCK_PENALTY   if stuck         else 0.0
+        lap_bonus            = lap_completion_bonus if lap_completed else 0.0
 
         reward = (
             progress_reward
             + speed_reward
             + steering_penalty
-            + throttle_penalty
+            + throttle_bonus
+            + steering_change_penalty
+            + throttle_change_penalty
+            + conflict_penalty
             + exit_penalty
             + stuck_penalty
+            + lap_bonus
         )
 
         if debug_reward_print:
             projected_total = self.total_reward + reward
             print(
-                f"\rprog={progress_reward:+.3f} "
+                f"prog={progress_reward:+.3f} "
                 f"spd={speed_reward:+.3f} "
-                f"steer={steering_penalty:+.3f} "
-                f"throt={throttle_penalty:+.3f} "
+                f"str={steering_penalty:+.3f} "
+                f"thr_bonus={throttle_bonus:+.3f} "
+                f"str_chg={steering_change_penalty:+.3f} "
+                f"thr_chg={throttle_change_penalty:+.3f} "
+                f"conflict={conflict_penalty:+.3f} "
                 f"exit={exit_penalty:+.3f} "
                 f"stuck={stuck_penalty:+.3f} "
+                f"lap={lap_bonus:+.3f} "
                 f"step={reward:+.3f} "
                 f"total~={projected_total:+.3f}",
-                end="",
+                end="\n",
                 flush=True,
             )
 

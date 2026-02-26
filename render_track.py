@@ -92,7 +92,9 @@ class TrackRenderer:
 
     def render(self):
         global in_lap
-        car_pos, heading, speed, gas, brake, steerAngle, normalizedCarPosition, laps = get_car_details()
+        (car_pos, heading, speed, gas, brake, steerAngle,
+         normalizedCarPosition, distance_traveled, laps, drs_available,
+         lat_vel, long_vel, yaw_rate, avg_slip) = get_car_details()
 
         norm_pos = normalizedCarPosition
         # Fill screen with black

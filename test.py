@@ -6,7 +6,10 @@ import numpy as np
 
 # Create a fresh environment
 env = DummyVecEnv([lambda: ACEnv()])
-model_dir = "good_model/920000_steps"
+# model_dir = r"models\SAC_20260223_185341"
+model_dir = r"models\SAC_new_reward_20260225_053731\1030000_steps"
+
+
 model_path = os.path.join(model_dir, "SAC.zip")
 vec_normalize_path = os.path.join(model_dir, "vec_normalize_stats.pkl")
 
@@ -16,7 +19,7 @@ if not os.path.exists(vec_normalize_path):
     raise FileNotFoundError(f"VecNormalize file not found: {vec_normalize_path}")
 
 # Load the saved normalization statistics
-# env = VecNormalize.load(vec_normalize_path, env)
+env = VecNormalize.load(vec_normalize_path, env)
 env.training = False
 env.norm_obs = True  # Set to True if you normalized obs during training
 env.norm_reward = False  # IMPORTANT: Do NOT normalize rewards during evaluation

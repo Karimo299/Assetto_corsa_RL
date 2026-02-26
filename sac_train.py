@@ -10,10 +10,14 @@ from stable_baselines3.common.noise import NormalActionNoise
 from ACEnv import ACEnv
 
 
-RESUME_DIR = None
+RESUME_DIR = r"models\SAC_20260223_185341\550000_steps"
+
+# --- What to load when resuming ---
+LOAD_VECNORMALIZE   = True  # set True to load old normalization stats (only if reward function unchanged)
+LOAD_REPLAY_BUFFER  = False  # set True to continue training from existing replay buffer
 
 # --- Run name ---
-RUN_NAME = "SAC"
+RUN_NAME = "SAC_new_reward"
 
 # --- Training ---
 TOTAL_TIMESTEPS     = 10_000_000
@@ -53,35 +57,46 @@ def make_env(log_path):
 
 def load_checkpoint(resume_dir, env):
     """
-    Load model, VecNormalize stats and replay buffer from a checkpoint folder.
-    Returns (model, vec_env).
+    Load model from checkpoint. VecNormalize and replay buffer are
+    controlled by LOAD_VECNORMALIZE and LOAD_REPLAY_BUFFER flags.
+
+    LOAD_VECNORMALIZE  = True  -> restore old normalization stats (use only if reward function is unchanged)
+    LOAD_VECNORMALIZE  = False -> fresh VecNormalize (use when reward function has changed)
+    LOAD_REPLAY_BUFFER = True  -> restore old replay buffer (use only if reward function is unchanged)
+    LOAD_REPLAY_BUFFER = False -> empty replay buffer (recommended when reward function has changed)
     """
     model_path      = os.path.join(resume_dir, "SAC.zip")
     vec_norm_path   = os.path.join(resume_dir, "vec_normalize_stats.pkl")
     replay_buf_path = os.path.join(resume_dir, "replay_buffer.pkl")
 
-    # Load VecNormalize
-    if os.path.exists(vec_norm_path):
+    # VecNormalize
+    if LOAD_VECNORMALIZE and os.path.exists(vec_norm_path):
         vec_env = VecNormalize.load(vec_norm_path, env)
         print(f"VecNormalize loaded from {vec_norm_path}")
     else:
-        print("No VecNormalize stats found, creating fresh wrapper.")
         vec_env = VecNormalize(env, norm_obs=NORM_OBS, norm_reward=NORM_REWARD, clip_obs=CLIP_OBS)
+        if LOAD_VECNORMALIZE:
+            print("VecNormalize stats not found, created fresh wrapper.")
+        else:
+            print("Fresh VecNormalize created (LOAD_VECNORMALIZE=False).")
 
-    vec_env.training   = True
+    vec_env.training    = True
     vec_env.norm_reward = NORM_REWARD
     vec_env.norm_obs    = NORM_OBS
 
-    # Load model
+    # Model
     model = SAC.load(model_path, env=vec_env, device=DEVICE)
     print(f"Model loaded from {model_path}")
 
-    # Load replay buffer
-    if os.path.exists(replay_buf_path):
+    # Replay buffer
+    if LOAD_REPLAY_BUFFER and os.path.exists(replay_buf_path):
         model.load_replay_buffer(replay_buf_path)
         print(f"Replay buffer loaded from {replay_buf_path}")
     else:
-        print("No replay buffer found, starting with empty buffer.")
+        if LOAD_REPLAY_BUFFER:
+            print("Replay buffer not found, starting with empty buffer.")
+        else:
+            print("Empty replay buffer (LOAD_REPLAY_BUFFER=False).")
 
     return model, vec_env
 

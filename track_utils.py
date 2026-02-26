@@ -14,7 +14,7 @@ except ImportError:
 
 
 def load_track_data():
-    track_name = "austria"
+    track_name = "spa"
     script_dir = os.path.dirname(os.path.realpath(__file__))
     csv_path = os.path.join(script_dir, f'csv/{track_name}/track.csv')
 
@@ -136,11 +136,7 @@ def detect_turn_state(ray_distances, ray_angles):
     avg_front_length = np.mean(front_rays) if front_rays else 0
     
     # Simple threshold-based detection
-    LONG_FRONT_THRESHOLD = 60  # If front rays are long enough, likely straight
-    SHORT_FRONT_THRESHOLD = 30  # If front rays are short, likely in turn
-    
-    # Debug output
-    print(f"Front_length: {avg_front_length:.1f}")
+    LONG_FRONT_THRESHOLD = 60
     
     # Return boolean: True = straight, False = turn
     return avg_front_length > LONG_FRONT_THRESHOLD
