@@ -25,6 +25,7 @@ class ACEnv(gym.Env):
         self.prev_distance_traveled = None
         self.prev_normalizedCarPosition = None
         self._prev_laps = None
+        self._teleport_on_reset = False
 
         self.STUCK_SPEED_THRESHOLD = 5.0
         self.STUCK_TIME_STEPS      = 40
@@ -33,7 +34,8 @@ class ACEnv(gym.Env):
         self._speed_achieved       = False
 
         # NEEDED FOR DIRECT MEMORY ACCESS ASSETTO CORSA
-        self.INIT_TELEPORT_POS = (490, -11, 248, -0.85, 0, 0.24, 2)
+        self.INIT_TELEPORT_POS = (490, -11, 248, -0.85, 0, 0.24, 2) # AUSTRIA
+        # self.INIT_TELEPORT_POS = (-188.632, 5.346, -254.452, -0.163, 0.000, -0.987, 2) # SPA
         self.RESET_TELEPORT_POS = (0, 0, 0, 1, 0, 0, 0)
         self.INIT_CONTROL = (1, 0, 0)
 
@@ -147,12 +149,13 @@ class ACEnv(gym.Env):
         self._low_speed_counter = 0
         self._speed_achieved = False
 
-        # Teleport to initial position
-        # ALL OF THESE ARE NEEDED DONT REMOVE ANY OF THEM
-        self.car_controller.teleport(*self.INIT_TELEPORT_POS)
-        self.car_controller.teleport(*self.RESET_TELEPORT_POS)
-        self.car_controller.write_car_controls(*self.INIT_CONTROL)
-        # END OF ALL OF THESE ARE NEEDED DONT REMOVE ANY OF THEM
+        if self._teleport_on_reset:
+            # Teleport to initial position
+            # ALL OF THESE ARE NEEDED DONT REMOVE ANY OF THEM
+            self.car_controller.teleport(*self.INIT_TELEPORT_POS)
+            self.car_controller.teleport(*self.RESET_TELEPORT_POS)
+            self.car_controller.write_car_controls(*self.INIT_CONTROL)
+            # END OF ALL OF THESE ARE NEEDED DONT REMOVE ANY OF THEM
 
         time.sleep(self.step_duration)
         (car_pos, heading, speed, gas, brake, steerAngle,
@@ -256,19 +259,20 @@ class ACEnv(gym.Env):
             else:
                 print(f"\n[STUCK] Total Reward: {self.total_reward:.2f}")
 
+        self._teleport_on_reset = off_track or stuck
         return state, reward, done, False, {}
 
     def calculate_reward(self, delta_dist, speed, steering, throttle,
                          brake_cmd, throttle_brake,
                          off_track, stuck, lap_completed):
         # --- Weights ---
-        progress_weight          = 0.3
-        speed_weight             = 0.3
+        progress_weight          = 0.2
+        speed_weight             = 0.5
         speed_normalise          = 350.0
         steering_penalty_weight  = 0.15
         steering_change_weight   = 0.5
         throttle_change_weight   = 0.15
-        throttle_bonus_weight    = 0.1
+        throttle_bonus_weight    = 0.6
         conflict_brake_threshold    = 0.5
         conflict_throttle_threshold = 0.1
         conflict_penalty_value      = -1.5
@@ -284,7 +288,7 @@ class ACEnv(gym.Env):
         steering_penalty = -steering_penalty_weight * (steering ** 2)
 
         # Unconditional throttle bonus
-        throttle_bonus = throttle_bonus_weight * throttle
+        throttle_bonus = throttle_bonus_weight * throttle ** 2
 
         # Smoothness penalties
         steering_change  = steering       - self.prev_steering

@@ -4,7 +4,7 @@ import csv
 import os
 import math
 import sys
-from sim_info import ray_angles, get_car_details
+from sim_info import ray_angles, get_car_details, info
 import track_utils  # Import the new utilities module
 
 
@@ -95,6 +95,17 @@ class TrackRenderer:
         (car_pos, heading, speed, gas, brake, steerAngle,
          normalizedCarPosition, distance_traveled, laps, drs_available,
          lat_vel, long_vel, yaw_rate, avg_slip) = get_car_details()
+
+        # Print current teleport tuple for ACEnv usage
+        y = info.graphics.carCoordinates[1]
+        dir_x = math.cos(heading)
+        dir_z = math.sin(heading)
+        dir_y = 0.0
+        print(
+            f"Teleport tuple: ({car_pos[0]:.3f}, {y:.3f}, {car_pos[1]:.3f}, "
+            f"{dir_x:.3f}, {dir_y:.3f}, {dir_z:.3f}, 2)",
+            end="\r",
+        )
 
         norm_pos = normalizedCarPosition
         # Fill screen with black
