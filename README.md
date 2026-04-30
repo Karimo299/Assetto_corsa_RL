@@ -80,6 +80,7 @@ Evaluate a trained policy with `test.py`.
 ```bash
 python test.py
 ```
+The script runs 10 deterministic episodes and prints per-episode steps and reward.
 
 ---
 
@@ -94,8 +95,6 @@ python test.py
 | Ziad | 1:12.859 | 210.2 km/h | 0.746 | 0.320 |
 
 ---
-
-The script runs 10 deterministic episodes and prints per-episode steps and reward.
 
 ## Limitations
 - Single-track only (Red Bull Ring)
