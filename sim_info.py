@@ -26,7 +26,6 @@ WBR, Rombik :)
 """
 import math
 import mmap
-import functools
 import ctypes
 from ctypes import c_int32, c_float, c_wchar
 
@@ -222,7 +221,6 @@ class SimInfo:
         self._acpmf_physics.close()
         self._acpmf_graphics.close()
         self._acpmf_static.close()
-        pass
 
     def __del__(self):
         self.close()
@@ -230,23 +228,14 @@ class SimInfo:
 
 info = SimInfo()
 
-ray_angles = sorted([
-    # Front-focused (critical for upcoming turns)
-    0,
-    -2, 5, 2, 5,
-    # Close left/right (tight corners and lane centering)
-    -5, 5, -7.5, 7.5, -10, 10,
-    # Mid-range (anticipate moderate turns)
-    -15, 15, -25, 25,
-    # Wide angles (detect sharp turns and track edges)
-    -45, 45, -60, 60,
-    # Optional: Extreme angles for hairpin turns
-    -75, 75, -90, 90
-])
+front_rays  = list(range(-20, 21, 2))   # every 2 degrees, -20 to +20 (21 rays)
+mid_rays    = list(range(-60, -20, 5)) + list(range(20, 61, 5))  # every 5 degrees (17 rays)
+side_rays   = [-90, -75, 90, 75]        # just the extremes (4 rays)
+
+ray_angles  = sorted(set(front_rays + mid_rays + side_rays))  # 42 rays total
 
 def get_car_details():
-    """Get the car position and rotation."""
-    print(info.graphics.carCoordinates[0], info.graphics.carCoordinates[1], info.graphics.carCoordinates[2])
+    """Get the car position, rotation and all observation-relevant fields."""
     car_pos = (info.graphics.carCoordinates[0], info.graphics.carCoordinates[2])
     heading = info.physics.heading + math.pi / 2
     speed = info.physics.speedKmh
@@ -254,13 +243,23 @@ def get_car_details():
     brake = info.physics.brake
     steerAngle = info.physics.steerAngle
     normalizedCarPosition = info.graphics.normalizedCarPosition
+    distance_traveled = info.graphics.distanceTraveled
     laps = info.graphics.completedLaps
-    return car_pos, heading, speed, gas, brake, steerAngle, normalizedCarPosition, laps
+    drs_available = bool(info.physics.drsAvailable)
+    lat_vel  = float(info.physics.localVelocity[0])                        
+    long_vel = float(info.physics.localVelocity[2])                         
+    yaw_rate = float(info.physics.localAngularVel[1])                       
+    avg_slip = float(sum(info.physics.wheelSlip) / 4.0)
+
+    return (
+        car_pos, heading, speed, gas, brake, steerAngle,
+        normalizedCarPosition, distance_traveled, laps, drs_available,
+        lat_vel, long_vel, yaw_rate, avg_slip
+    )
 
 
 def demo():
-    import time 
-
+    import time
     for _ in range(400):
         print(info.static.track, info.graphics.tyreCompound, info.graphics.currentTime,
               info.physics.rpms, info.graphics.currentTime, info.static.maxRpm, list(info.physics.tyreWear))

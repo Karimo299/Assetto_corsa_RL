@@ -14,8 +14,9 @@ except ImportError:
 
 
 def load_track_data():
+    track_name = "austria"
     script_dir = os.path.dirname(os.path.realpath(__file__))
-    csv_path = os.path.join(script_dir, 'csv/austria.csv')
+    csv_path = os.path.join(script_dir, f'csv/{track_name}/track.csv')
 
     left_barrier = []
     right_barrier = []
@@ -111,3 +112,31 @@ def calculate_ray_endpoint(car_pos, heading, angle, left_polygon, right_polygon)
             # Handle other geometry types (e.g., LineString) if necessary
             return end_x, end_z
 
+
+def detect_turn_state(ray_distances, ray_angles):
+    """
+    Detect if the car is on a straight using ray distances.
+    Simplified boolean detection based on front ray length.
+    
+    Args:
+        ray_distances: Array of distances to track boundaries for each ray
+        ray_angles: Array of angles (in degrees) corresponding to each ray
+    
+    Returns:
+        Boolean: True if straight, False if not straight (turn)
+    """
+    # Group front rays (0° to ±10°)
+    front_rays = []
+    for i, angle in enumerate(ray_angles):
+        abs_angle = abs(angle)
+        if abs_angle <= 10:
+            front_rays.append(ray_distances[i])
+    
+    # Calculate average front ray length
+    avg_front_length = np.mean(front_rays) if front_rays else 0
+    
+    # Simple threshold-based detection
+    LONG_FRONT_THRESHOLD = 60
+    
+    # Return boolean: True = straight, False = turn
+    return avg_front_length > LONG_FRONT_THRESHOLD

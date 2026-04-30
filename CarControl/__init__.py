@@ -14,9 +14,9 @@ class CarController:
         self.control_memory = mmap.mmap(-1, ctypes.sizeof(CaiCarControls), tagname=self.car_control_file, access=mmap.ACCESS_WRITE)
         self.sim_control_memory = mmap.mmap(0, ctypes.sizeof(CaiSimControl), tagname=self.sim_state_file, access=mmap.ACCESS_WRITE)
 
-    def write_car_controls(self, gas=0.0, brake=0.0, steer=0.0):
+    def write_car_controls(self, gas=0.0, brake=0.0, steer=0.0, drs=False):
         self.control_memory.seek(0)
-        car_controls = CaiCarControls(gas=gas, brake=brake, steer=steer, gear_up=False, gear_dn=False, autoclutch_on_start=True, autoclutch_on_change=True, autoblip_active=True, autoshift_active=True)
+        car_controls = CaiCarControls(gas=gas, brake=brake, steer=steer, drs=drs, gear_up=False, gear_dn=False, autoclutch_on_start=True, autoclutch_on_change=True, autoblip_active=True, autoshift_active=True)
         self.control_memory.write(bytearray(car_controls))
         self.control_memory.flush()
 
@@ -40,7 +40,6 @@ class CarController:
         self.control_memory.flush()
         self.write_car_state()
         time.sleep(1)
-        print("speedddd: ",self.read_car_state().speed_kmh)
 
     def read_car_state(self):
         try:
