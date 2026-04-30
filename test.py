@@ -6,11 +6,11 @@ import numpy as np
 
 # Create a fresh environment
 env = DummyVecEnv([lambda: ACEnv()])
-# model_dir = r"models\SAC_20260223_185341"
-# model_dir = r"models\SAC_new_reward_20260225_053731\1030000_steps"
-# model_dir = r"models\SAC_after_straightening_20260225_231148\1240000_steps"
-model_dir = r"models\SAC_after_straightening_20260226_064600\1760000_steps"
-# model_dir = r"models\SAC_after_straightening_spa_20260226_184835\2580000_steps"
+# model_dir = r"models\SAC_Wobble"
+# model_dir = r"models\SAC_Straightened\1840000_steps"
+# model_dir = r"models\SAC_Straightened_Faster_1\1200000_steps"
+model_dir = r"models\SAC_Straightened_Faster_2\1760000_steps"
+# model_dir = r"models\SAC_SPA_Test\2580000_steps"
 
 
 model_path = os.path.join(model_dir, "SAC.zip")
