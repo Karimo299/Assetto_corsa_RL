@@ -1,16 +1,19 @@
 import os
 from stable_baselines3 import SAC
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
-from ACEnv import ACEnv
+from assetto_rl.env import ACEnv
 import numpy as np
 
 # Create a fresh environment
 env = DummyVecEnv([lambda: ACEnv()])
-# model_dir = r"models\SAC_Wobble"
-# model_dir = r"models\SAC_Straightened\1840000_steps"
-# model_dir = r"models\SAC_Straightened_Faster_1\1200000_steps"
-model_dir = r"models\SAC_Straightened_Faster_2\1760000_steps"
-# model_dir = r"models\SAC_SPA_Test\2580000_steps"
+
+# Uncomment the model you want to evaluate (leave only one active).
+# Forward slashes work on Windows, macOS, and Linux.
+# model_dir = "models/SAC_Wobble"
+# model_dir = "models/SAC_Straightened/1030000_steps"
+# model_dir = "models/SAC_Straightened_Faster_1/1240000_steps"
+model_dir = "models/SAC_Straightened_faster_2/1760000_steps"  # best: avg ~1:17
+# model_dir = "models/SAC_SPA_Test/2580000_steps"
 
 
 model_path = os.path.join(model_dir, "SAC.zip")

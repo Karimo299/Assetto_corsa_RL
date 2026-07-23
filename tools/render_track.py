@@ -4,8 +4,8 @@ import csv
 import os
 import math
 import sys
-from sim_info import ray_angles, get_car_details, info
-import track_utils  # Import the new utilities module
+from assetto_rl.env.sim_info import ray_angles, get_car_details, info
+from assetto_rl.env import track_utils
 
 
 WINDOW_WIDTH = 800
