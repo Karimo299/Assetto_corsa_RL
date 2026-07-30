@@ -1,6 +1,6 @@
 import gymnasium as gym
 from stable_baselines3.common.env_checker import check_env
-from ACEnv import ACEnv
+from assetto_rl.env import ACEnv
 
 # Import your custom environment here
 # If your environment is in a different file, import it like:

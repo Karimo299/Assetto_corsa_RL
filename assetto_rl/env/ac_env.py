@@ -2,9 +2,9 @@ import time
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
-from CarControl import CarController
-from sim_info import get_car_details, ray_angles
-from track_utils import load_track_data, create_continuous_track_polygon, calculate_ray_endpoint, is_car_off_track
+from .car_control import CarController
+from .sim_info import get_car_details, ray_angles
+from .track_utils import load_track_data, create_continuous_track_polygon, calculate_ray_endpoint, is_car_off_track
 
 
 _, left_barrier, right_barrier = load_track_data()

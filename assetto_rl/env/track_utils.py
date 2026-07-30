@@ -16,7 +16,9 @@ except ImportError:
 def load_track_data():
     track_name = "austria"
     script_dir = os.path.dirname(os.path.realpath(__file__))
-    csv_path = os.path.join(script_dir, f'csv/{track_name}/track.csv')
+    # repo root is two levels up from assetto_rl/env/
+    repo_root = os.path.abspath(os.path.join(script_dir, '..', '..'))
+    csv_path = os.path.join(repo_root, 'csv', track_name, 'track.csv')
 
     left_barrier = []
     right_barrier = []
